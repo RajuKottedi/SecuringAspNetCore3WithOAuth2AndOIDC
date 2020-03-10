@@ -1,5 +1,4 @@
-﻿using ImageGallery.Model;
-using System;
+﻿using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace ImageGallery.Client.ViewModels

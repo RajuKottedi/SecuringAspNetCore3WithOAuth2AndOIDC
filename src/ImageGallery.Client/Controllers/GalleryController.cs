@@ -1,69 +1,72 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
-using ImageGallery.Client.ViewModels;
-using Newtonsoft.Json;
+﻿using ImageGallery.Client.ViewModels;
 using ImageGallery.Model;
-using System.Net.Http;
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
 using System.IO;
-using ImageGallery.Client.Services;
+using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace ImageGallery.Client.Controllers
-{
+{ 
     public class GalleryController : Controller
     {
-        private readonly IImageGalleryHttpClient _imageGalleryHttpClient;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public GalleryController(IImageGalleryHttpClient imageGalleryHttpClient)
+        public GalleryController(IHttpClientFactory httpClientFactory)
         {
-            _imageGalleryHttpClient = imageGalleryHttpClient;
+            _httpClientFactory = httpClientFactory ?? 
+                throw new ArgumentNullException(nameof(httpClientFactory));
         }
 
         public async Task<IActionResult> Index()
         {
-            // call the API
-            var httpClient = await _imageGalleryHttpClient.GetClient(); 
+            var httpClient = _httpClientFactory.CreateClient("APIClient");
 
-            var response = await httpClient.GetAsync("api/images").ConfigureAwait(false);
+            var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                "/api/images/");
+            
+            var response = await httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
 
-            if (response.IsSuccessStatusCode)
-            {
-                var imagesAsString = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
 
-                var galleryIndexViewModel = new GalleryIndexViewModel(
-                    JsonConvert.DeserializeObject<IList<Image>>(imagesAsString).ToList());
-
-                return View(galleryIndexViewModel);
-            }          
-
-            throw new Exception($"A problem happened while calling the API: {response.ReasonPhrase}");
+            using (var responseStream = await response.Content.ReadAsStreamAsync())
+            {   
+                return View(new GalleryIndexViewModel(
+                    await JsonSerializer.DeserializeAsync<List<Image>>(responseStream)));
+            }             
         }
 
         public async Task<IActionResult> EditImage(Guid id)
         {
-            // call the API
-            var httpClient = await _imageGalleryHttpClient.GetClient();
 
-            var response = await httpClient.GetAsync($"api/images/{id}").ConfigureAwait(false);
+            var httpClient = _httpClientFactory.CreateClient("APIClient");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var imageAsString = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                var deserializedImage = JsonConvert.DeserializeObject<Image>(imageAsString);
+            var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/api/images/{id}");
+
+            var response = await httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+
+            response.EnsureSuccessStatusCode();
+
+            using (var responseStream = await response.Content.ReadAsStreamAsync())
+            { 
+                var deserializedImage = await JsonSerializer.DeserializeAsync<Image>(responseStream);
 
                 var editImageViewModel = new EditImageViewModel()
                 {
                     Id = deserializedImage.Id,
                     Title = deserializedImage.Title
                 };
-                
+
                 return View(editImageViewModel);
-            }
-           
-            throw new Exception($"A problem happened while calling the API: {response.ReasonPhrase}");
+            }     
         }
 
         [HttpPost]
@@ -76,43 +79,47 @@ namespace ImageGallery.Client.Controllers
             }
 
             // create an ImageForUpdate instance
-            var imageForUpdate = new ImageForUpdate()
-                { Title = editImageViewModel.Title };
+            var imageForUpdate = new ImageForUpdate() { 
+                Title = editImageViewModel.Title };
 
             // serialize it
-            var serializedImageForUpdate = JsonConvert.SerializeObject(imageForUpdate);
+            var serializedImageForUpdate = JsonSerializer.Serialize(imageForUpdate);
 
-            // call the API
-            var httpClient = await _imageGalleryHttpClient.GetClient();
+            var httpClient = _httpClientFactory.CreateClient("APIClient");
 
-            var response = await httpClient.PutAsync(
-                $"api/images/{editImageViewModel.Id}",
-                new StringContent(serializedImageForUpdate, System.Text.Encoding.Unicode, "application/json"))
-                .ConfigureAwait(false);                        
+            var request = new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/api/images/{editImageViewModel.Id}");
 
-            if (response.IsSuccessStatusCode)
-            {
-                return RedirectToAction("Index");
-            }
-          
-            throw new Exception($"A problem happened while calling the API: {response.ReasonPhrase}");
+            request.Content = new StringContent(
+                serializedImageForUpdate,
+                System.Text.Encoding.Unicode,
+                "application/json");
+            
+            var response = await httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+
+            response.EnsureSuccessStatusCode();
+
+            return RedirectToAction("Index");       
         }
 
         public async Task<IActionResult> DeleteImage(Guid id)
         {
-            // call the API
-            var httpClient = await _imageGalleryHttpClient.GetClient();
+            var httpClient = _httpClientFactory.CreateClient("APIClient");
 
-            var response = await httpClient.DeleteAsync($"api/images/{id}").ConfigureAwait(false);
+            var request = new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"/api/images/{id}");
 
-            if (response.IsSuccessStatusCode)
-            {
-                return RedirectToAction("Index");
-            }
-       
-            throw new Exception($"A problem happened while calling the API: {response.ReasonPhrase}");
+            var response = await httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+
+            response.EnsureSuccessStatusCode();
+
+            return RedirectToAction("Index");
         }
-        
+
         public IActionResult AddImage()
         {
             return View();
@@ -121,7 +128,7 @@ namespace ImageGallery.Client.Controllers
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> AddImage(AddImageViewModel addImageViewModel)
-        {   
+        {
             if (!ModelState.IsValid)
             {
                 return View();
@@ -129,7 +136,7 @@ namespace ImageGallery.Client.Controllers
 
             // create an ImageForCreation instance
             var imageForCreation = new ImageForCreation()
-                { Title = addImageViewModel.Title };
+            { Title = addImageViewModel.Title };
 
             // take the first (only) file in the Files list
             var imageFile = addImageViewModel.Files.First();
@@ -140,27 +147,30 @@ namespace ImageGallery.Client.Controllers
                 using (var ms = new MemoryStream())
                 {
                     fileStream.CopyTo(ms);
-                    imageForCreation.Bytes = ms.ToArray();                     
+                    imageForCreation.Bytes = ms.ToArray();
                 }
             }
-            
+
             // serialize it
-            var serializedImageForCreation = JsonConvert.SerializeObject(imageForCreation);
+            var serializedImageForCreation = JsonSerializer.Serialize(imageForCreation);  
+            
+            var httpClient = _httpClientFactory.CreateClient("APIClient");
 
-            // call the API
-            var httpClient = await _imageGalleryHttpClient.GetClient();
+            var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/images");
 
-            var response = await httpClient.PostAsync(
-                $"api/images",
-                new StringContent(serializedImageForCreation, System.Text.Encoding.Unicode, "application/json"))
-                .ConfigureAwait(false); 
+            request.Content = new StringContent(
+                serializedImageForCreation,
+                System.Text.Encoding.Unicode,
+                "application/json");
 
-            if (response.IsSuccessStatusCode)
-            {
-                return RedirectToAction("Index");
-            }
+            var response = await httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
 
-            throw new Exception($"A problem happened while calling the API: {response.ReasonPhrase}");
-        }               
+            response.EnsureSuccessStatusCode();
+
+            return RedirectToAction("Index");
+        }
     }
 }

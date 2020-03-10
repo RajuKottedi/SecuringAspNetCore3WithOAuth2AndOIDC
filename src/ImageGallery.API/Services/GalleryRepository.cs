@@ -7,17 +7,19 @@ namespace ImageGallery.API.Services
 {
     public class GalleryRepository : IGalleryRepository, IDisposable
     {
-        GalleryContext _context;
+        private GalleryContext _context;
 
         public GalleryRepository(GalleryContext galleryContext)
         {
-            _context = galleryContext;
+            _context = galleryContext ?? 
+                throw new ArgumentNullException(nameof(galleryContext));
         }
+
         public bool ImageExists(Guid id)
         {
             return _context.Images.Any(i => i.Id == id);
-        }
-        
+        }       
+
         public Image GetImage(Guid id)
         {
             return _context.Images.FirstOrDefault(i => i.Id == id);
@@ -29,6 +31,11 @@ namespace ImageGallery.API.Services
                 .OrderBy(i => i.Title).ToList();
         }
 
+        public bool IsImageOwner(Guid id, string ownerId)
+        {
+            return _context.Images.Any(i => i.Id == id && i.OwnerId == ownerId);
+        }
+        
         public void AddImage(Image image)
         {
             _context.Images.Add(image);

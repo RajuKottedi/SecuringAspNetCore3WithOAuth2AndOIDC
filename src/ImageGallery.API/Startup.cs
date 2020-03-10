@@ -1,4 +1,5 @@
-﻿using ImageGallery.API.Entities;
+﻿using AutoMapper;
+using ImageGallery.API.Entities;
 using ImageGallery.API.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -6,47 +7,47 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System;
 
 namespace ImageGallery.API
 {
     public class Startup
     {
-        public static IConfigurationRoot Configuration;
+        public IConfiguration Configuration { get; }
 
-        public Startup(IHostingEnvironment env)
+        public Startup(IConfiguration configuration)
         {
-            var builder = new ConfigurationBuilder()
-                .SetBasePath(env.ContentRootPath)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true, reloadOnChange: true)
-                .AddEnvironmentVariables();
-
-            Configuration = builder.Build();
+            Configuration = configuration;
         }
-
+        
         // This method gets called by the runtime. Use this method to add services to the container.
-        // For more information on how to configure your application, visit http://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
-             services.AddMvc();
-                      
+            services.AddControllers()
+                     .AddJsonOptions(opts => opts.JsonSerializerOptions.PropertyNamingPolicy = null);
+
             // register the DbContext on the container, getting the connection string from
             // appSettings (note: use this during development; in a production environment,
             // it's better to store the connection string in an environment variable)
-            var connectionString = Configuration["connectionStrings:imageGalleryDBConnectionString"];
-            services.AddDbContext<GalleryContext>(o => o.UseSqlServer(connectionString));
+            services.AddDbContext<GalleryContext>(options =>
+            {
+                options.UseSqlServer(
+                    Configuration["ConnectionStrings:ImageGalleryDBConnectionString"]);
+            });
 
             // register the repository
             services.AddScoped<IGalleryRepository, GalleryRepository>();
+
+            // register AutoMapper-related services
+            services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env, 
-            ILoggerFactory loggerFactory, GalleryContext galleryContext)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            loggerFactory.AddConsole();
-
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
@@ -58,43 +59,25 @@ namespace ImageGallery.API
                     appBuilder.Run(async context =>
                     {
                         // ensure generic 500 status code on fault.
-                        context.Response.StatusCode = 500;
+                        context.Response.StatusCode = StatusCodes.Status500InternalServerError; ;
                         await context.Response.WriteAsync("An unexpected fault happened. Try again later.");
                     });
                 });
+                // The default HSTS value is 30 days. You may want to change this for 
+                // production scenarios, see https://aka.ms/aspnetcore-hsts.
+                app.UseHsts();
             }
+
+            app.UseHttpsRedirection();
 
             app.UseStaticFiles();
 
-            AutoMapper.Mapper.Initialize(cfg =>
+            app.UseRouting(); 
+
+            app.UseEndpoints(endpoints =>
             {
-                // Map from Image (entity) to Image, and back
-                cfg.CreateMap<Image, Model.Image>().ReverseMap();
-
-                // Map from ImageForCreation to Image
-                // Ignore properties that shouldn't be mapped
-                cfg.CreateMap<Model.ImageForCreation, Image>()
-                    .ForMember(m => m.FileName, options => options.Ignore())
-                    .ForMember(m => m.Id, options => options.Ignore())
-                    .ForMember(m => m.OwnerId, options => options.Ignore());
-
-                // Map from ImageForUpdate to Image
-                // ignore properties that shouldn't be mapped
-                cfg.CreateMap<Model.ImageForUpdate, Image>()
-                    .ForMember(m => m.FileName, options => options.Ignore())
-                    .ForMember(m => m.Id, options => options.Ignore())
-                    .ForMember(m => m.OwnerId, options => options.Ignore());
+                endpoints.MapControllers();
             });
-
-            AutoMapper.Mapper.AssertConfigurationIsValid();
-
-			// ensure DB migrations are applied
-            galleryContext.Database.Migrate();
-
-            // seed the DB with data
-            galleryContext.EnsureSeedDataForContext();
-			
-            app.UseMvc(); 
         }
     }
 }

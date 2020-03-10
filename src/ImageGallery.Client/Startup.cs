@@ -2,64 +2,63 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.AspNetCore.Http;
-using ImageGallery.Client.Services;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Net.Http.Headers;
+using System;
 
 namespace ImageGallery.Client
 {
     public class Startup
     {
-        public Startup(IHostingEnvironment env)
-        {
-            var builder = new ConfigurationBuilder()
-                .SetBasePath(env.ContentRootPath)
-                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true)
-                .AddEnvironmentVariables();
-            Configuration = builder.Build();
-        }
+        public IConfiguration Configuration { get; }
 
-        public IConfigurationRoot Configuration { get; }
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
 
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            // Add framework services.
-            services.AddMvc();
+            services.AddControllersWithViews()
+                 .AddJsonOptions(opts => opts.JsonSerializerOptions.PropertyNamingPolicy = null);
 
-            // register an IHttpContextAccessor so we can access the current
-            // HttpContext in services by injecting it
-            services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-
-            // register an IImageGalleryHttpClient
-            services.AddScoped<IImageGalleryHttpClient, ImageGalleryHttpClient>();
+            // create an HttpClient used for accessing the API
+            services.AddHttpClient("APIClient", client =>
+            {
+                client.BaseAddress = new Uri("https://localhost:44366/");
+                client.DefaultRequestHeaders.Clear();
+                client.DefaultRequestHeaders.Add(HeaderNames.Accept, "application/json");
+            });             
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            loggerFactory.AddConsole(Configuration.GetSection("Logging"));
-            loggerFactory.AddDebug();
-
+            app.UseStaticFiles();
+ 
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
-                app.UseBrowserLink();
             }
             else
             {
                 app.UseExceptionHandler("/Shared/Error");
+                // The default HSTS value is 30 days. You may want to change this for
+                // production scenarios, see https://aka.ms/aspnetcore-hsts.
+                app.UseHsts();
             }
-            
+            app.UseHttpsRedirection();
             app.UseStaticFiles();
 
-            app.UseMvc(routes =>
+            app.UseRouting();
+
+            app.UseEndpoints(endpoints =>
             {
-                routes.MapRoute(
+                endpoints.MapControllerRoute(
                     name: "default",
-                    template: "{controller=Gallery}/{action=Index}/{id?}");
+                    pattern: "{controller=Gallery}/{action=Index}/{id?}");
             });
-        }         
+        }
     }
 }

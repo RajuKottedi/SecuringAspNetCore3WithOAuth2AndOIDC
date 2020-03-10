@@ -1,4 +1,5 @@
-﻿using ImageGallery.Model;
+﻿using ImageGallery.Client.Controllers;
+using ImageGallery.Model;
 using System.Collections.Generic;
 
 namespace ImageGallery.Client.ViewModels
@@ -8,7 +9,7 @@ namespace ImageGallery.Client.ViewModels
         public IEnumerable<Image> Images { get; private set; }
             = new List<Image>();
 
-        public GalleryIndexViewModel(List<Image> images)
+        public GalleryIndexViewModel(IEnumerable<Image> images)
         {
            Images = images;
         }
